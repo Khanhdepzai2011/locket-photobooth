@@ -9,9 +9,9 @@ const [facing,setFacing]=useState<"user"|"environment">("user"),[status,setStatu
 async function startCamera(side=facing){
  try{stream.current?.getTracks().forEach(t=>t.stop());setActive(false);
  const s=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:side},width:{ideal:1920},height:{ideal:1080}}});
- stream.current=s;if(video.current){video.current.srcObject=s;await video.current.play()}
+ stream.current=s;if(video.current){video.current.srcObject=s;video.current.play().catch(()=>{})}
  setActive(true);setStatus("Camera đã sẵn sàng");
- const track=s.getVideoTracks()[0];const caps=track.getCapabilities() as MediaTrackCapabilities & {zoom?:{min:number;max:number;step?:number}};
+ const track=s.getVideoTracks()[0];const caps=(typeof track.getCapabilities==="function"?track.getCapabilities():{}) as MediaTrackCapabilities & {zoom?:{min:number;max:number;step?:number}};
  if(caps.zoom){setZoomRange([caps.zoom.min,caps.zoom.max]);const z=caps.zoom.min<=0.5?0.5:caps.zoom.min;try{await track.applyConstraints({advanced:[{zoom:z} as MediaTrackConstraintSet]});setZoom(z)}catch{setZoom(1)}}
  else {setZoom(1);setZoomRange([1,1])}
  }catch(e){setActive(false);setStatus("Lỗi camera: "+(e instanceof Error?e.message:"Hãy cấp quyền camera và sử dụng HTTPS."));}
@@ -19,7 +19,7 @@ async function startCamera(side=facing){
 useEffect(()=>()=>stream.current?.getTracks().forEach(t=>t.stop()),[]);
 useEffect(()=>{if(tab==="camera"&&stream.current&&video.current){video.current.srcObject=stream.current;video.current.play().catch(()=>{});}},[tab]);
 async function changeZoom(value:number){const t=stream.current?.getVideoTracks()[0];if(!t)return;try{await t.applyConstraints({advanced:[{zoom:value} as MediaTrackConstraintSet]});setZoom(value)}catch{setStatus("Thiết bị không hỗ trợ mức zoom này")}}
-function capture(){const v=video.current;if(!v||!v.videoWidth)return;const c=document.createElement("canvas");c.width=v.videoWidth;c.height=v.videoHeight;const ctx=c.getContext("2d")!;ctx.filter=filter;ctx.translate(facing==="user"?c.width:0,0);ctx.scale(facing==="user"?-1:1,1);ctx.drawImage(v,0,0,c.width,c.height);const src=c.toDataURL("image/jpeg",0.9);setShots(old=>[{src,id:Date.now()},...old].slice(0,24));setStatus("Đã chụp ảnh!");}
+function capture(){const v=video.current;if(!v||!v.videoWidth){setStatus("Camera chưa có hình. Vui lòng thử lại.");return;}const c=document.createElement("canvas");c.width=v.videoWidth;c.height=v.videoHeight;const ctx=c.getContext("2d")!;ctx.filter=filter;ctx.translate(facing==="user"?c.width:0,0);ctx.scale(facing==="user"?-1:1,1);ctx.drawImage(v,0,0,c.width,c.height);const src=c.toDataURL("image/jpeg",0.9);setShots(old=>[{src,id:Date.now()},...old].slice(0,24));setStatus("Đã chụp ảnh!");}
 async function shoot(){if(!active||shooting.current)return;shooting.current=true;try{const total=booth.mode==="auto"?4:1;for(let shot=0;shot<total;shot++){for(let i=timer;i>0;i--){setCount(i);await new Promise(r=>setTimeout(r,1000))}setCount(0);capture();if(shot<total-1)await new Promise(r=>setTimeout(r,350))}if(total===4)setStatus("Đã chụp đủ 4 ảnh. Vào Photobooth để xem và tải xuống.")}finally{shooting.current=false;setCount(0)}}
 function importPhotos(files:FileList|null){if(!files)return;Array.from(files).filter(f=>f.type.startsWith("image/")).forEach(f=>{const reader=new FileReader();reader.onload=()=>setShots(old=>[{src:String(reader.result),id:Date.now()+Math.random()},...old]);reader.readAsDataURL(f)})}
 async function exportStrip(){
@@ -28,9 +28,12 @@ async function exportStrip(){
  const picked=shots.slice(0,4).reverse();
  const imgs=await Promise.all(picked.map(s=>new Promise<HTMLImageElement>((resolve,reject)=>{const im=new Image();im.onload=()=>resolve(im);im.onerror=reject;im.src=s.src})));
  const c=document.createElement("canvas"),ctx=c.getContext("2d");if(!ctx)return;
- const pad=32,gap=16,foot=145,w=900,h=1120;
+ const pad=32,w=900,h=1120;
  c.width=w;c.height=h;
  ctx.fillStyle=frame;ctx.fillRect(0,0,w,h);
+ const pattern=booth.pattern;
+ if(pattern==="Chấm bi"||pattern==="Kim tuyến"){ctx.fillStyle=pattern==="Kim tuyến"?"#ffd86d":"#ffffff";for(let y=12;y<h;y+=24)for(let x=12;x<w;x+=24){ctx.beginPath();ctx.arc(x,y,pattern==="Kim tuyến"?2:4,0,Math.PI*2);ctx.fill()}}
+ if(pattern==="Kẻ sọc"||pattern==="Caro"){ctx.strokeStyle="#ffffff88";ctx.lineWidth=5;for(let x=0;x<w;x+=30){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke()}if(pattern==="Caro")for(let y=0;y<h;y+=30){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}}
  const positions=booth.layout==="double"?[[pad,pad,402,458],[466,pad,402,458],[pad,506,402,458],[466,506,402,458]]:booth.layout==="hero"?[[pad,pad,836,480],[pad,528,402,436],[466,528,402,210],[466,754,402,210]]:[[pad,pad,402,458],[466,pad,402,458],[pad,506,402,458],[466,506,402,458]];
  if(booth.layout==="double"){positions[0]=[pad,pad,402,458];positions[1]=[466,pad,402,458]}
  const effects:Record<string,string>={"Đen trắng":"grayscale(1)","Digicam":"contrast(1.3) saturate(1.35)","Phim":"sepia(.55) contrast(1.1)","Mộng mơ":"brightness(1.15) saturate(.8)"};
@@ -39,7 +42,7 @@ async function exportStrip(){
  ctx.filter="none";ctx.textAlign="center";ctx.fillStyle=frame.toLowerCase()==="#101010"?"#ffffff":"#242424";
  ctx.font=booth.font==="Máy chữ"?"30px monospace":booth.font==="Cổ điển"?"italic 34px Georgia":"bold 34px sans-serif";
  const date=new Date().toLocaleDateString("vi-VN");
- const caption=booth.caption==="Không"?"":booth.caption==="Chữ riêng"?"PHOTOBOOTH":booth.caption==="Cả hai"?"PHOTOBOOTH · "+date:date;
+ const custom=booth.customText||"PHOTOBOOTH";const caption=booth.caption==="Không"?"":booth.caption==="Chữ riêng"?custom:booth.caption==="Cả hai"?custom+" · "+date:date;
  if(caption)ctx.fillText(caption,w/2,1035);
  ctx.font="bold 24px sans-serif";ctx.fillText("PHOTOBOOTH",w/2,1080);
  const link=document.createElement("a");link.download="photobooth-"+Date.now()+".png";link.href=c.toDataURL("image/png");link.click();setStatus("Đã tạo ảnh PNG.");
