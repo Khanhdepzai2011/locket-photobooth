@@ -12,11 +12,12 @@ async function startCamera(side=facing){
  stream.current=s;if(video.current){video.current.srcObject=s;await video.current.play()}
  setActive(true);setStatus("Camera đã sẵn sàng");
  const track=s.getVideoTracks()[0];const caps=track.getCapabilities() as MediaTrackCapabilities & {zoom?:{min:number;max:number;step?:number}};
- if(caps.zoom){setZoomRange([caps.zoom.min,caps.zoom.max]);const z=caps.zoom.min<=0.5?0.5:caps.zoom.min;await track.applyConstraints({advanced:[{zoom:z} as MediaTrackConstraintSet]});setZoom(z)}
+ if(caps.zoom){setZoomRange([caps.zoom.min,caps.zoom.max]);const z=caps.zoom.min<=0.5?0.5:caps.zoom.min;try{await track.applyConstraints({advanced:[{zoom:z} as MediaTrackConstraintSet]});setZoom(z)}catch{setZoom(1)}}
  else {setZoom(1);setZoomRange([1,1])}
- }catch(e){setStatus("Không mở được camera. Hãy cấp quyền camera và sử dụng HTTPS.");}
+ }catch(e){setActive(false);setStatus("Lỗi camera: "+(e instanceof Error?e.message:"Hãy cấp quyền camera và sử dụng HTTPS."));}
 }
 useEffect(()=>()=>stream.current?.getTracks().forEach(t=>t.stop()),[]);
+useEffect(()=>{if(tab==="camera"&&stream.current&&video.current){video.current.srcObject=stream.current;video.current.play().catch(()=>{});}},[tab]);
 async function changeZoom(value:number){const t=stream.current?.getVideoTracks()[0];if(!t)return;try{await t.applyConstraints({advanced:[{zoom:value} as MediaTrackConstraintSet]});setZoom(value)}catch{setStatus("Thiết bị không hỗ trợ mức zoom này")}}
 function capture(){const v=video.current;if(!v||!v.videoWidth)return;const c=document.createElement("canvas");c.width=v.videoWidth;c.height=v.videoHeight;const ctx=c.getContext("2d")!;ctx.filter=filter;ctx.translate(facing==="user"?c.width:0,0);ctx.scale(facing==="user"?-1:1,1);ctx.drawImage(v,0,0,c.width,c.height);const src=c.toDataURL("image/jpeg",0.9);setShots(old=>[{src,id:Date.now()},...old].slice(0,24));setStatus("Đã chụp ảnh!");}
 async function shoot(){if(!active)return;for(let i=timer;i>0;i--){setCount(i);await new Promise(r=>setTimeout(r,1000))}setCount(0);capture()}
